@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"fmt"
+
 	"github.com/gorilla/mux"
 	"github.com/rancher/catalog-service/model"
 	"github.com/rancher/catalog-service/parse"
@@ -34,16 +36,75 @@ func getTemplates(w http.ResponseWriter, r *http.Request, envId string) (int, er
 	categories, _ := r.URL.Query()["category"]
 	categoriesNe, _ := r.URL.Query()["category_ne"]
 
+	// DB CALL: returns an array of templates
 	templates := model.LookupTemplates(db, envId, catalog, templateBaseEq, categories, categoriesNe)
 
 	resp := model.TemplateCollection{}
+
+	startTotal := time.Now()
+
+	//////////////////////////////////////////////////////////////////////
+
+	startCatalogTime := time.Now()
+
+	// create unique list of catalog IDs
+	var catalogIDList map[string]bool
+	catalogIDList = make(map[string]bool)
+
 	for _, template := range templates {
-		catalog := model.GetCatalog(db, template.CatalogId)
-		templateResource := templateResource(apiContext, catalog.Name, template, rancherVersion)
+		catalogIDList[strconv.Itoa(int(template.CatalogId))] = true
+	}
+
+	// join catalog IDs into string deliminated by commas
+	var catalogIDs []string
+	for key := range catalogIDList {
+		catalogIDs = append(catalogIDs, key)
+	}
+	IDs := strings.Join(catalogIDs, ",")
+
+	elapsedCatalogTime := time.Since(startCatalogTime)
+	fmt.Printf("\n\n\nTIME FOR CATALOG IDs: %v\n\n\n", elapsedCatalogTime)
+
+	fmt.Printf("CATALOG ID LIST: \n%v", IDs)
+
+	// put it into one query
+	var catalogModels []model.CatalogModel
+
+	start := time.Now()
+
+	db.Raw("SELECT * FROM catalog WHERE id IN ( ? );", IDs).Scan(&catalogModels)
+
+	elapsed := time.Since(start)
+	fmt.Printf("\n\n\n\nDB TOOK: %v \n\n\n\n\n", elapsed)
+
+	// create map to lookup Catalogs based on ID
+	startTemplateTime := time.Now()
+
+	var collectedCatalogs map[uint]string
+	collectedCatalogs = make(map[uint]string)
+	for _, catalog := range catalogModels {
+		collectedCatalogs[catalog.ID] = catalog.Name
+	}
+
+	numTemplates := 0
+	for _, template := range templates {
+		numTemplates++
+		catalogName := collectedCatalogs[template.CatalogId]
+		templateResource := templateResource(apiContext, catalogName, template, rancherVersion)
 		if len(templateResource.VersionLinks) > 0 {
 			resp.Data = append(resp.Data, *templateResource)
 		}
 	}
+
+	elapsedTemplateTime := time.Since(startTemplateTime)
+	//////////////////////////////////////////////////////////////////////
+
+	elapsedTotal := time.Since(startTotal)
+	fmt.Printf("\n\n\nTOTAL NUMBER OF TEMPLATES: %v\n\n\n", numTemplates)
+
+	fmt.Printf("\n\n\nTIME FOR TEMPLATES: %v\n\n\n", elapsedTemplateTime)
+
+	fmt.Printf("\n\n\nTOTAL TIME: %v \n\n\n", elapsedTotal)
 
 	resp.Actions = map[string]string{
 		"refresh": api.GetApiContext(r).UrlBuilder.ReferenceByIdLink("template", "") + "?action=refresh",
