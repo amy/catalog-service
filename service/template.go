@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"fmt"
+
 	"github.com/gorilla/mux"
 	"github.com/rancher/catalog-service/model"
 	"github.com/rancher/catalog-service/parse"
@@ -37,6 +39,8 @@ func getTemplates(w http.ResponseWriter, r *http.Request, envId string) (int, er
 	templates := model.LookupTemplates(db, envId, catalog, templateBaseEq, categories, categoriesNe)
 
 	resp := model.TemplateCollection{}
+
+	start := time.Now()
 	for _, template := range templates {
 		catalog := model.GetCatalog(db, template.CatalogId)
 		templateResource := templateResource(apiContext, catalog.Name, template, rancherVersion)
@@ -44,6 +48,8 @@ func getTemplates(w http.ResponseWriter, r *http.Request, envId string) (int, er
 			resp.Data = append(resp.Data, *templateResource)
 		}
 	}
+	elapsed := time.Since(start)
+	fmt.Printf("\n\n\nTOTAL TIME: %v\n\n\n", elapsed)
 
 	resp.Actions = map[string]string{
 		"refresh": api.GetApiContext(r).UrlBuilder.ReferenceByIdLink("template", "") + "?action=refresh",
