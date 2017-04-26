@@ -41,14 +41,20 @@ func getTemplates(w http.ResponseWriter, r *http.Request, envId string) (int, er
 	resp := model.TemplateCollection{}
 
 	start := time.Now()
+	numTemplates := 0
 	for _, template := range templates {
+		numTemplates++
 		catalog := model.GetCatalog(db, template.CatalogId)
+
+		fmt.Printf("\nCATALOG ID: %v\n", template.CatalogId)
+
 		templateResource := templateResource(apiContext, catalog.Name, template, rancherVersion)
 		if len(templateResource.VersionLinks) > 0 {
 			resp.Data = append(resp.Data, *templateResource)
 		}
 	}
 	elapsed := time.Since(start)
+	fmt.Printf("\n\n\nTOTAL NUM TEMPLATES: %v\n\n\n", numTemplates)
 	fmt.Printf("\n\n\nTOTAL TIME: %v\n\n\n", elapsed)
 
 	resp.Actions = map[string]string{
